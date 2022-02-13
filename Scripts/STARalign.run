@@ -1,0 +1,30 @@
+#!/bin/bash
+
+#SBATCH -p brc
+#SBATCH -t 10:00:00
+#SBATCH --nodes=1
+#SBATCH --ntasks=16
+#SBATCH --mem 128G
+#SBATCH --job-name STARalign
+#SBATCH -o /scratch/users/k1893000/RNAseq/Monocytes-oxLDL/star/STARalign_%j.out 
+#SBATCH -e /scratch/users/k1893000/RNAseq/Monocytes-oxLDL/star/STARalign_%j.err
+
+cd /scratch/users/k1893000/RNAseq/Monocytes-oxLDL/star/
+
+module purge
+module load apps/star/2.7.3a
+
+for file in /scratch/users/k1893000/RNAseq/Monocytes-oxLDL/data/*_1.fq.gz
+do
+	#echo "$file" | rev | cut -d "/" -f 1 | rev | cut -d "_" -f 1
+	NAME=$(echo $file | cut -d "/" -f 8 | cut -d "_" -f 1,2)   # selects the file from the absolute path. Has to be adjusted if the folder hierarchy is different
+	echo "$NAME"
+	echo processing files: $file and ${file/_1.fq.gz/_2.fq.gz}
+	STAR --runThreadN 16 \
+	--genomeDir /scratch/users/k1893000/RNAseq/ReferenceGenome/GRCh38_release104/index \
+	--readFilesCommand zcat \
+	--quantMode GeneCounts \
+	--outSAMtype BAM SortedByCoordinate \
+	--outFileNamePrefix /scratch/users/k1893000/RNAseq/Monocytes-oxLDL/star/$NAME \
+	--readFilesIn "$file" "${file/_1.fq.gz/_2.fq.gz}"
+done
