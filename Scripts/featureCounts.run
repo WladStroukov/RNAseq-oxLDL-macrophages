@@ -1,0 +1,21 @@
+#!/bin/bash
+
+#SBATCH -p brc 
+#SBATCH -t 2:00:00 
+#SBATCH --nodes=1 
+#SBATCH --ntasks=4 
+#SBATCH --mem 32G 
+#SBATCH --job-name featureCounts 
+#SBATCH -o /scratch/users/k1893000/RNAseq/Monocytes-oxLDL/featurecounts/featureCounts_%j.out
+#SBATCH -e /scratch/users/k1893000/RNAseq/Monocytes-oxLDL/featurecounts/featureCounts_%j.err
+
+
+cd /scratch/users/k1893000/RNAseq/Monocytes-oxLDL/star/
+
+
+#echo *out.bam
+
+featureCounts -T 4 -p \
+-a ../../ReferenceGenome/GRCh38_release104/Homo_sapiens.GRCh38.104.gtf \
+-o ../featurecounts/Monocytes-oxLDL_featurecounts.txt \
+*out.bam
