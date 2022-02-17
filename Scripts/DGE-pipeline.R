@@ -38,7 +38,42 @@ library(pheatmap)       # Heatmaps
 
 ##### Utility functions ####
 
-
+makePCAplot <- function(mat, sampleTable, PC.x = 1, PC.y = 2, colorby="Condition", main="PCA-plot"){
+  #' Perform and plot PCA of count matrix.
+  #' Requires transformed count matrix (e.g. VST transformation)
+  #' @param mat Array, 2D matrix with GeneIDs as rows and samples as columns 
+  #' @param sampleTable DataFrame, Table containing the sample information/meta data of the sequencing. 
+  #' @param PC.x Numeric, Principal component on x-axis. [Default: 1]
+  #' @param PC.y Numeric, Principal component on y-axis. [Default: 2]
+  #' @param colorby Character, [Default: "condition"]
+  #' @param main Character, title of plot. [Default: "PCA-plot"]
+  #' @examples 
+  #' makePCAplot(vsd_matrix, PC.x = 2, PC.y = 3, colorby = "treatment", main = "PCA plot by Treatment")
+  
+  # Prepare PCA data
+  pca <- prcomp(t(mat)) # compute PCA
+  df.pca <- cbind(sampleTable, pca$x)
+  
+  
+  # get proportion of Variance
+  var.pcx <- round(summary(pca)$importance[2,PC.x]*100 , 1) # % variance of PCx
+  var.pcy <- round(summary(pca)$importance[2,PC.y]*100 , 1) # % variance of PCy
+  
+  # plot PCA results
+  PC.x = paste0("PC", PC.x)
+  PC.y = paste0("PC", PC.y)
+  pca_plot <- ggplot(df.pca, aes_string(x = PC.x, y = PC.y, color= colorby))
+  pca_plot + labs(color = colorby) + geom_point(size=5) + ggtitle(main) +
+    labs(fill = colorby) +
+    xlab(paste0(PC.x, " (", var.pcx,"% variance)")) +    
+    ylab(paste0(PC.y ," (", var.pcy,"% variance)")) +  
+    coord_fixed() +
+    xlim(-100,100) +
+    ylim(-100,100) +
+    theme_bw() +
+    scale_color_manual(values=c("#8cafc8", "#eb9282", "#ebb573")) +
+    theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank())
+}
 
 
 
@@ -50,11 +85,11 @@ library(pheatmap)       # Heatmaps
 
 # Metadata/ Sample Table 
 colData <- data.frame(
-  sample = factor(c('A03_M2', 'A03_MOX', 
+  Sample = factor(c('A03_M2', 'A03_MOX', 
                     'A04_M2', 'A04_MOX',
                     'S02_M2', 'S02_MOX')),
-  condition = factor(rep(c('M2',"MOX"), 3)),
-  donor = factor(c('A03', 'A03', 
+  Condition = factor(rep(c('M2',"MOX"), 3)),
+  Donor = factor(c('A03', 'A03', 
                    'A04', 'A04', 
                    'S02', 'S02'))
 )
@@ -72,7 +107,7 @@ print(paste("Full data set:", all(rownames(colData) %in% colnames(cts)))) # Chec
 # Parsing count matrix to DESeq2 dataset
 ddsCts <- DESeqDataSetFromMatrix(countData = cts,
                                  colData = colData,
-                                 design = ~donor + condition)
+                                 design = ~Donor + Condition)
 # Running DESeq analysis
 dds <- DESeq(ddsCts)
 
@@ -107,36 +142,42 @@ pca <- prcomp(t(vsd_mat)) # compute PCA
 fviz_screeplot(pca, addlabels = T) + ylim(0,100) + theme_classic() + labs(title = "Variances - PCA (VST transformated counts)\n(Full)", x = "Principal components", y = "% of variance") # Screeplot visualizes the variances accross the different PCs
 
 
+# Plots of genes contributing to variance for the individual PCs
+# PC1
+fviz_contrib(pca, choice = "var", axes = 1, top = 15) + 
+  theme_classic() + 
+  labs(title = "Contribution to PC1", x = "Genes", y = "Contribution (%)") +
+  theme(axis.text.x = element_text(angle = 90))
 
-df.pca <- cbind(colData, pca$x)# Create data frame with metadata form the sampleTable, this contains the different PCs. This is used to plot the PCA
+# PC2
+fviz_contrib(pca, choice = "var", axes = 2, top = 15) + 
+  theme_classic() + 
+  labs(title = "Contribution to PC2", x = "Genes", y = "Contribution (%)") +
+  theme(axis.text.x = element_text(angle = 90))
 
-# get % of Variance
-var.pc1 <- round(summary(pca)$importance[2,1]*100 , 1) # % variance of PC1
-var.pc2 <- round(summary(pca)$importance[2,2]*100 , 1) # % variance of PC2
+# PC3
+fviz_contrib(pca, choice = "var", axes = 3, top = 15) + 
+  theme_classic() + 
+  labs(title = "Contribution to PC3", x = "Genes", y = "Contribution (%)") +
+  theme(axis.text.x = element_text(angle = 90))
 
-# PC1 and PC2 according to subset
-pca_plot1 <- ggplot(df.pca, aes(x=PC1,y=PC2, color = condition))
-p1 <- pca_plot1 + labs(color = "Condition") + geom_point(size=5) + ggtitle("PCA by subset") +
-  scale_color_manual(values=c("#8cafc8", "#eb9282")) +
-  labs(fill = "Condition") +
-  xlab(paste0("PC1 (", var.pc1,"% variance)")) +    
-  ylab(paste0("PC2 (", var.pc2,"% variance)")) +   
-  coord_fixed() +
-  xlim(-100,100) +
-  ylim(-100,100) +
-  theme_bw() +
-  theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank())
-p1
 
-# PC1 and PC2 according to donor
-pca_plot2 <- ggplot(df.pca, aes(x=PC1,y=PC2, color = donor))
-p2 <- pca_plot2 + labs(color = "Donor") + geom_point(size=5) + ggtitle("PCA by donor") +
-  labs(fill = "Donor") +
-  xlab(paste0("PC1 (", var.pc1,"% variance)")) +    
-  ylab(paste0("PC2 (", var.pc2,"% variance)")) +  
-  coord_fixed() +
-  xlim(-100,100) +
-  ylim(-100,100) +
-  theme_bw() +
-  theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank())
-p2
+# PCA plots
+png(paste0("../Results/",Sys.Date(),"PCA_PC1+PC2_condition.png"), width=300, height=275 )
+makePCAplot(mat=vsd_mat, sampleTable = colData, colorby="Condition", PC.x = 1, PC.y = 2, main = "PC1 and PC2 by condition")
+dev.off()
+
+png(paste0("../Results/",Sys.Date(),"PCA_PC1+PC2_donor.png"), width=300, height=275 )
+makePCAplot(mat=vsd_mat, sampleTable = colData, colorby="Donor", PC.x = 1, PC.y = 2, main = "PC1 and PC2 by donor")
+dev.off()
+
+png(paste0("../Results/",Sys.Date(),"PCA_PC1+PC3_condition.png"), width=300, height=275 )
+makePCAplot(mat=vsd_mat, sampleTable = colData, colorby="Condition", PC.x = 1, PC.y = 3, main = "PC1 and PC3 by condition")
+dev.off()
+
+png(paste0("../Results/",Sys.Date(),"PCA_PC1+PC3_donor.png"), width=300, height=275 )
+makePCAplot(mat=vsd_mat, sampleTable = colData, colorby="Donor", PC.x = 1, PC.y = 3, main = "PC1 and PC3 by donor")
+dev.off()
+
+
+
