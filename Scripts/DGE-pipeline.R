@@ -113,12 +113,12 @@ dds <- DESeq(ddsCts)
 
 
 #### Assessing data
-# Transformation for data set: Variance stabilized transformation
+## Transformation for data set: Variance stabilized transformation
 vsd <- vst(dds, blind=TRUE)
 vsd_mat <- assay(vsd)
 
 
-# Per gene standard deviation
+## Per gene standard deviation
 # Plotting the per-gene standard deviation (SD, taken across samples) against the rank of the mean for the the variance-stabilizing transformation(vst)
 vsd_msd <- meanSdPlot(vsd_mat, ylab="Standard deviation (vst)", plot=FALSE)
 
@@ -127,7 +127,7 @@ vsd_msd$gg + ggtitle("Per gene standard deviation (VST)")
 dev.off()
 
 
-# Hierarchical clustering of samples
+## Hierarchical clustering of samples
 vsd_cor  <- cor(vsd_mat)#Computing the pairwise correlation values for transformed counts.
 colnames(vsd_cor)
 annotation <- data.frame(Subset = c(rep(c("M2","MOX"), 3) ))# Preparing annotations and labeling.
@@ -137,7 +137,7 @@ ann_colors = list(Subset = c(M2 ="#ebb573", MOX ="#eb9282"))
 pheatmap(vsd_cor, annotation = annotation, annotation_colors = ann_colors, main = "VST transformed",  silent=F)
 
 
-# Principal component analysis
+## Principal component analysis
 pca <- prcomp(t(vsd_mat)) # compute PCA
 fviz_screeplot(pca, addlabels = T) + ylim(0,100) + theme_classic() + labs(title = "Variances - PCA (VST transformated counts)\n(Full)", x = "Principal components", y = "% of variance") # Screeplot visualizes the variances accross the different PCs
 
@@ -179,5 +179,21 @@ png(paste0("../Results/",Sys.Date(),"PCA_PC1+PC3_donor.png"), width=300, height=
 makePCAplot(mat=vsd_mat, sampleTable = colData, colorby="Donor", PC.x = 1, PC.y = 3, main = "PC1 and PC3 by donor")
 dev.off()
 
+
+
+
+## Diagnostic plots
+# Cooks distances
+png(paste0("../Results/",Sys.Date(),"_Cooks-distance.png"), width=300, height=275 )
+par(mar=c(5,5,1,1))
+boxplot(log10(assays(dds)[["cooks"]]), range=0, las=1, main="Cook's distance")
+dev.off()
+
+# Dispersion estimates
+png(paste0("../Results/",Sys.Date(),"_Dispersion-estimates.png"), width=300, height=275 )
+par(mar=c(5,5,2,2))
+plotDispEsts(dds) 
+title("Dispersion estimates")
+dev.off()
 
 
