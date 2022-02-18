@@ -93,12 +93,11 @@ colData <- data.frame(
                    'A04', 'A04', 
                    'S02', 'S02'))
 )
-rownames(colData) <- colData$sample 
+rownames(colData) <- colData$Sample 
 
 # Count matrix
 cts <- as.matrix(read.csv("../data/countmatrix.txt", sep="\t",row.names="Geneid"))
-colnames(cts) <- colData$sample # change the long sample names to short sample names
-
+colnames(cts) <- colData$Sample # change the long sample names to short sample names
 print(paste("Full data set:", all(rownames(colData) %in% colnames(cts)))) # Checking if the sampleTable and count matrix annotations correspond to each other
 
 
@@ -129,13 +128,17 @@ dev.off()
 
 ## Hierarchical clustering of samples
 vsd_cor  <- cor(vsd_mat)#Computing the pairwise correlation values for transformed counts.
-colnames(vsd_cor)
-annotation <- data.frame(Subset = c(rep(c("M2","MOX"), 3) ))# Preparing annotations and labeling.
+
+
+annotation <- data.frame(Condition = c(rep(c("M2","MOX"), 3) ))# Preparing annotations and labeling.
 rownames(annotation) <- colnames(vsd_cor) #all matrices have the same rownames. Note that the rownames are colnames in the correlation matrix
-ann_colors = list(Subset = c(M2 ="#ebb573", MOX ="#eb9282"))
+#rownames(annotation) <- colData[["Sample"]]
+#annotation
+ann_colors = list(Condition = c(M2 ="#eb9282", MOX ="#8cafc8"))  # RA ="#ebb573", PopS ="#eb9282", RO ="#8cafc8"
 
+png(paste0("../Results/",Sys.Date(),"_Hierarchical-sample-clustering.png"), width=400, height=300 )
 pheatmap(vsd_cor, annotation = annotation, annotation_colors = ann_colors, main = "VST transformed",  silent=F)
-
+dev.off()
 
 ## Principal component analysis
 pca <- prcomp(t(vsd_mat)) # compute PCA
@@ -195,5 +198,7 @@ par(mar=c(5,5,2,2))
 plotDispEsts(dds) 
 title("Dispersion estimates")
 dev.off()
+
+
 
 
