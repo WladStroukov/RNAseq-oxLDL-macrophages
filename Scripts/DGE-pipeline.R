@@ -24,7 +24,7 @@ library(RColorBrewer)   # colors for heatmap
 
 # library(gridExtra)        # to arrange heatmaps in a grid. Alternative to patchwork
 library(ggrepel)          # Labeling in heatmap      
-# library(viridis)          # colour scheme (incl Inferno)  
+library(viridis)          # colour scheme (used in GO enrichment plots) 
 # library(VennDiagram)
 # library(patchwork)        # display of multiple plots and simple arrangements: p1 + p2
 # 
@@ -33,6 +33,13 @@ library(ggrepel)          # Labeling in heatmap
 library(GenomicFeatures)  # Import GTF file data for annotation, for makeTxDbFromGFF 
 library(biomaRt)          # Main annotation package
 # #library(AnnotationDbi)    # Annotation - mapIds() function, automatically loaded when using library(GenomicFeatures) 
+library(org.Hs.eg.db)     # Annotation for functional analysis with cluster profiler
+
+# Functional analysis
+library(clusterProfiler)  # Functional analysis: Enrichments 
+library(msigdbr)          # MSigDB
+library(enrichplot)       # Visualisations: gseaplot2, dotplot, Treeplot, enrichmentmaps, (pairwise_termsim) etc
+
 
 
 
@@ -269,14 +276,14 @@ dev.off()
 vsd_cor  <- cor(vsd_mat)#Computing the pairwise correlation values for transformed counts.
 
 
-annotation <- data.frame(Condition = c(rep(c("M2","MOX"), 3) ))# Preparing annotations and labeling.
-rownames(annotation) <- colnames(vsd_cor) #all matrices have the same rownames. Note that the rownames are colnames in the correlation matrix
+labs <- data.frame(Condition = c(rep(c("M2","MOX"), 3) ))# Preparing annotations and labeling.
+rownames(labs) <- colnames(vsd_cor) #all matrices have the same rownames. Note that the rownames are colnames in the correlation matrix
 #rownames(annotation) <- colData[["Sample"]]
 #annotation
 ann_colors = list(Condition = c(M2 ="#eb9282", MOX ="#8cafc8"))  # RA ="#ebb573", PopS ="#eb9282", RO ="#8cafc8"
 
 png(paste0("../Results/",Sys.Date(),"_Hierarchical-sample-clustering.png"), width=400, height=300 )
-pheatmap(vsd_cor, annotation = annotation, annotation_colors = ann_colors, main = "VST transformed",  silent=F)
+pheatmap(vsd_cor, annotation = labs, annotation_colors = ann_colors, main = "VST transformed",  silent=F)
 dev.off()
 
 ## Principal component analysis
@@ -403,18 +410,15 @@ res.sig  <- getSigDEGs(res.anno,  padj.cutoff=padj, save=T, wd="../results/", fi
 
 
 ## Visualising DGE results
+
+# Heatmaps
 #' Heatmaps of significant differentially expressed genes.
 #' Extracting the vst transformed counts to generate Heatmaps of sig. DEGs.
-
 # select the rows with significant genes
 sig.genes <- res.sig[res.sig$padj < padj,]["hgnc_symbol"] # get significant genes
 sig.symbol <- sig.genes[["hgnc_symbol"]]
 sig.ensembl <- rownames(sig.genes) 
-
 norm_countsig <- data.frame(vsd_mat)[sig.ensembl,] # select the sig genes from the transformed count matrix
-
-
-# plot
 
 png(paste0("../Results/",Sys.Date(),"_Heatmap.png"), width=600, height=1800, res=120 )
 pheatmap(norm_countsig,         
@@ -432,10 +436,133 @@ pheatmap(norm_countsig,
 dev.off()
 
 
-# Volcano plot
+# Volcano plots
 genelist = c("ABCA7","VMO1")
-makeVolcanoplot(res.anno=res.anno, padj.cutoff=0.05, lfc.cutoff=0.58, labelname="hgnc_symbol", labellist=genelist, ylim=c(0,10), xlim=c(-1.2,1.0), ybreaks=5,xbreaks=10, segments=F, main="oxLDL-treated M2 Macrophages vs untreated M2 macrophages")
+png(paste0("../Results/",Sys.Date(),"_VolcanoPlot.png"), width=500, height=500, res=120 )
+makeVolcanoplot(res.anno=res.anno, padj.cutoff=0.05, lfc.cutoff=0.58, labelname="hgnc_symbol", labellist=genelist, ylim=c(0,10), xlim=c(-1.2,1.0), ybreaks=5,xbreaks=10, segments=F, main="oxLDL-treated M2 Macrophages \nvs untreated M2 macrophages")
+dev.off()
 
 
 
+#### Functional analysis ####
+#'Functional analysis will be performed with the `ClusterProfiler` package. 
 
+## Preparing input data
+#' GSEA and ORA require the data to be in specific formats. The next few sections are used to extract the relevant genes and parse them into the right format for the different analyses.
+
+#' 1. List of DEGs (ENSEMBL IDs)
+#' Significant results which will be used for ORA with GO. Create background dataset for hypergeometric testing using all genes tested for significance in the results
+MOXvM2_sig.ensembl <- as.character(rownames(subset(res.anno, padj < 0.05 ))) # vector of sig DEGs (ENSEMBL IDs) for ORA
+universe.ensembl <- as.character(rownames(res.anno))
+
+
+#' 2. Ranked Genelist for GSEA (ENSEMBL IDs)
+#' Prepare Gene list: 1. numeric vector: FC; 2. named vector: gene IDs (ENSEMBL) 3. sorted vector: number should be sorted in decreasing order
+foldchanges <- res.anno[,"log2FoldChange"] # take shrunken log2 fold changes
+names(foldchanges) <- as.character(rownames(res.anno)) # can be used for ORA of GO terms as well
+rankedMOXvM2_all.ensembl <- sort(foldchanges, decreasing = T)
+
+
+
+## Overrepresentation analysis - GO
+eGO <- enrichGO(gene = MOXvM2_sig.ensembl, 
+                     universe = universe.ensembl,   
+                     keyType = "ENSEMBL",           # depends on database - may have different names
+                     OrgDb = org.Hs.eg.db,          
+                     ont = "BP",                    # BP, CC, MF
+                     pAdjustMethod = "BH",          # Benjamini-Hochberg
+                     pvalueCutoff = 0.05,
+                     qvalueCutoff = 0.05,           
+                     #minGSSize = 20,               # minimal size of genes annotated by Ontology term for testing.
+                     readable = TRUE)
+# save results
+write.csv(data.frame(eGO), paste0("../Results/",Sys.Date(),"_GO-enrichment_MOX-vs-M2.csv"))
+
+
+# Formatting the GO enrichment results and calculating gene ratio for plotting
+enrichment <- data.frame(eGO)
+# Gene ratio (number of genes related to GO term / total number of significant genes)
+generatio <- enrichment["GeneRatio"]
+generatio <- separate(data=generatio, col=GeneRatio, into = c("GeneRatio_k","GeneRatio_n"), sep="/" ) # separate gene Ratio column
+generatio <- sapply(generatio, as.numeric)
+enrichment$GeneRatio <- generatio[,1] / generatio[,2]
+# Background ratio ()
+bgratio <- enrichment["BgRatio"]
+bgratio <- separate(data=bgratio, col=BgRatio, into = c("BgRatio_M","BgRatio_N"), sep="/" ) # separate gene Ratio column
+bgratio <- sapply(bgratio, as.numeric)
+enrichment$BgRatio <- bgratio[,1] / bgratio[,2]
+# rearranging order
+enrichment <- arrange(enrichment, -GeneRatio)
+
+
+# Plot top results of GO analysis
+png(paste0("../Results/",Sys.Date(),"_GO-results.png"), width=450, height=400)
+p <- ggplot(data=enrichment[1:25,], aes(x=GeneRatio, y=reorder(Description,GeneRatio), color=p.adjust)) # size=bgRatio
+p  + geom_point(stat="identity", size=5) + 
+  scale_colour_viridis(begin=0, end=1) + 
+  labs(color = "FDR-adjusted p-value") + 
+  scale_x_continuous(name="Gene ratio", limits=c(0.05,0.15)) +
+  ylab("GO term") + 
+  ggtitle("GO enrichment") +
+  theme_bw()
+dev.off()
+
+
+# Plotting custom results (e.g. pathways of interest)
+terms <- c("GO:0006082", "GO:0043436", "GO:0016053", "GO:0019752", "GO:0008610", "GO:0006631", "GO:0008202", "GO:0045834", "GO:0006641", "GO:0044255", "")
+enrichment.subset <- enrichment[enrichment$ID %in% terms,]
+png(paste0("../Results/",Sys.Date(),"_GO-results_custom.png"), width=450, height=200)
+p <- ggplot(data=enrichment.subset, aes(x=GeneRatio, y=reorder(Description,GeneRatio), color=p.adjust)) # size=bgRatio
+p  + geom_point(stat="identity", size=5) + 
+  scale_colour_viridis(begin=0, end=1) + 
+  labs(color = "FDR-adjusted p-value") + 
+  scale_x_continuous(name="Gene ratio", limits=c(0.02,0.15)) +
+  ylab("GO term") + 
+  ggtitle("GO enrichment") +
+  theme_bw()
+dev.off()
+
+
+
+## Geneset enrichment analysis
+#' Retrieving all human gene sets from msigdbr
+
+msigdb_df <- msigdbr(species = "Homo sapiens") # all msigDB entries
+#head(msigdb_df)
+
+# all gene sets
+#all_t2g <- dplyr::select(msigdb_df, c("gs_name","ensembl_gene"))
+
+# Hallmark
+h <- msigdb_df[(msigdb_df[,"gs_cat"] == "H"),]
+h_t2g <- dplyr::select(h, c("gs_name","ensembl_gene"))
+
+gsem <- GSEA(rankedMOXvM2_all.ensembl,
+                  TERM2GENE = h_t2g,
+                  eps = 0,
+                  pvalueCutoff = 0.05,
+                  pAdjustMethod = "BH",
+                  minGSSize = 30,
+                  maxGSSize = 500,
+                  nPerm = 10000,
+                  verbose = F)
+
+
+# save results
+write.csv(data.frame(gsem), paste0("../Results/",Sys.Date(),"_GSEA_MOX-vs-M2.csv"))
+
+png(paste0("../Results/",Sys.Date(),"_GSEA_p53.png"), width=670, height=250)
+gseaplot2(gsem, geneSetID = "HALLMARK_P53_PATHWAY", title = "HALLMARK: P53 PATHWAY \n(oxLDL treated macrophages vs untreated macrophages)", subplots= 1:2, pvalue_table = T, ES_geom = "line" )
+dev.off()
+
+png(paste0("../Results/",Sys.Date(),"_GSEA_Inflammatory-response.png"), width=670, height=300)
+gseaplot2(gsem, geneSetID = "HALLMARK_INFLAMMATORY_RESPONSE", title = "HALLMARK: INFLAMMATORY RESPONSE \n(oxLDL treated macrophages vs untreated macrophages)", subplots= 1:2, pvalue_table = T, ES_geom = "line" )
+dev.off()
+
+png(paste0("../Results/",Sys.Date(),"_GSEA_ROS.png"), width=670, height=300)
+gseaplot2(gsem, geneSetID = "HALLMARK_REACTIVE_OXYGEN_SPECIES_PATHWAY", title = "HALLMARK: ROS pathway \n(oxLDL treated macrophages vs untreated macrophages)", subplots= 1:2, pvalue_table = T, ES_geom = "line" )
+dev.off()
+
+png(paste0("../Results/",Sys.Date(),"_GSEA_Hypoxia.png"), width=670, height=300)
+gseaplot2(gsem, geneSetID = "HALLMARK_HYPOXIA", title = "HALLMARK: Hypoxia \n(oxLDL treated macrophages vs untreated macrophages)", subplots= 1:2, pvalue_table = T, ES_geom = "line" )
+dev.off()
