@@ -20,14 +20,13 @@ library(ggplot2)        # main package for visualisation
 library(scales)           # for scaling values (used for visualisations, etc.)
 library(vsn)            # for meanSdPlot()
 library(pheatmap)       # Heatmaps
+library(RColorBrewer)   # colors for heatmap
+
 # library(gridExtra)        # to arrange heatmaps in a grid. Alternative to patchwork
-# library(ggrepel)          # Labeling      
-# library(RColorBrewer)       
+library(ggrepel)          # Labeling in heatmap      
 # library(viridis)          # colour scheme (incl Inferno)  
 # library(VennDiagram)
 # library(patchwork)        # display of multiple plots and simple arrangements: p1 + p2
-# 
-# 
 # 
 # ## Annotation
 # #library(tximport)         # For transcript database?
@@ -125,6 +124,96 @@ getSigDEGs <- function(res, padj.cutoff=0.05, save=F, wd="./", filename="Signifi
 }
 
 
+#' DrawMAPlot functions cuts of all values with padj = NA, but for this plot they should be included. Add an addtional condition that plots values with NA in grey (or other colour)
+
+DrawMAPlot <- function(res, main="",padj=0.05, xlab="Mean of normalized counts", ylab=expression(log[2]~fold~change), ylim=c(-2,2)){
+  #' Draws an MA plot showing the log2 fold changes attributable to a given variable over the mean of normalized counts for all the samples in a DESeqDataSet.
+  #' @param res DESeqDataSet, Extracted results from DESeqDataSet using the results() function after DESeq analysis was performed.
+  #' @param main String; Title of the Plot [Default: ""]
+  #' @param padj Double; Adjusted p-value. [Default: 0.05]
+  #' @param xlab String; Title of x label. [Default: "Mean of normalized counts"]
+  #' @param ylab String or Expression; Title of y label [Default: expression(log[2]~fold~change)]
+  #' @param ylim Integer or double; Limits of the y axis [Default: 2]
+  #' @examples
+  #' DrawMAPlot(res=res.TvsUn, main="Treated vs Untreated (ashr)")
+  res.df <- as.data.frame(res)
+  ggplot(data = res.df,aes(x = baseMean, y = log2FoldChange)) +
+    geom_point(color = ifelse(res.df$padj < padj, "red", "grey20"),  # add condition for padj = NA
+               alpha = ifelse(res.df$padj < padj, 0.5, 0.2),         # add condition for padj = NA
+               shape = 16) +
+    scale_x_log10(limits=c(1,1000000), breaks = trans_breaks("log10", function(x) 10^x),labels = trans_format("log10", math_format(10^.x))) +
+    labs(x = xlab, y = ylab) +
+    ylim(ylim) +
+    geom_hline(yintercept=0, linetype="dashed", color = "black",size=1) +
+    theme_bw() + 
+    ggtitle(main)
+}
+
+
+
+makeVolcanoplot <- function(res.anno, padj.cutoff=0.05, lfc.cutoff=0.58, labelname, labellist, ylim=c(0,30), xlim=c(-5,5), ybreaks=5, xbreaks=10, nudge=-1, segments=FALSE, main){
+  #' Generate volcano plot from extracted DESeq results.
+  #' @param res.anno DESeqDataSet; Extracted and annotated DESeq results
+  #' @param padj.cutoff Numeric; Adjusted p-value. Genes below this value will be highlighted.
+  #' @param lfc.cutoff Numeric; Log2 fold change. Genes above this value will be highlighted. LFC is on a log2 scale. An lfc of 0.58 represents a fold change of 1.5.
+  #' @param labelname Character; Name of the column used for the labels that will be added to the plot. E.g. "hgnc_symbol".
+  #' @param labellist Character vector; Vector with labels that should be used as labels. Has to match the labels that are selected through labelname arg.
+  #' @param ylim Numeric vector; Sets limits of the y axis. [Default: "c(0,30)"]
+  #' @param xlim Numeric vector; Sets limits of the x axis. [Default: "c(-5,5)"]
+  #' @param ybreaks Numeric; Sets number of ticks on the y axis. [Default: 5]
+  #' @param xbreaks Numeric; Sets number of ticks on the x axis. [Default: 10]
+  #' @param nudge Numeric; Nudge argument for geom_text_repel() function. [Default:-1]
+  #' @param segments Logical; Add segments to the plot. [Default: FALSE ]
+  #' @param main Character; Add main title to the plot. [Default: ""]
+  #' @examples 
+  #'
+  
+  
+  # format data
+  res <- res.anno %>%
+    data.frame() %>%
+    mutate(threshold_up = padj < padj.cutoff & abs(log2FoldChange) >= lfc.cutoff) %>% 
+    arrange(padj)
+  
+  # add custom labels
+  volcanolabels <- res[,"hgnc_symbol"] 
+  volcanolabels[!volcanolabels %in% labellist] <- ""
+  
+  # plot data
+  plot <- ggplot( res, aes(x = log2FoldChange, y = -log10(padj)) ) +
+    geom_point(size=1, shape=16, 
+               colour = ifelse(res$threshold_up, "firebrick3", "grey20"),
+               alpha  = ifelse(res$threshold_up, 0.8, 0.2)  ) +
+    geom_text_repel(aes(label = volcanolabels), 
+                    max.overlaps = Inf, 
+                    min.segment.length = 0,
+                    size=3.1,fontface="bold",
+                    nudge_y = nudge) +
+    ggtitle( main ) +
+    xlab( expression(log[2]~fold~change) ) +
+    ylab( expression(-log[10]~adjusted~p-value) ) +
+    scale_color_manual(values=c("#A9A9A9", "#eb9282")) +
+    scale_y_continuous(limits = ylim, breaks=scales::pretty_breaks(n=ybreaks) ) +
+    scale_x_continuous(limits = xlim, breaks=scales::pretty_breaks(n=xbreaks) ) +
+    theme_bw() +
+    theme(legend.position = "none",
+          plot.title = element_text(size = rel(1.5), hjust = 0.5),
+          axis.title = element_text(size = rel(1.25)),
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank()
+    ) 
+  
+  if(segments){ 
+    plot + geom_segment(aes(x = lfc.cutoff, y = -log10(padj.cutoff), xend = lfc.cutoff, yend = ylim[2]-1 ), linetype="dashed") +
+      geom_segment(aes(x = lfc.cutoff, y = -log10(padj.cutoff), xend = xlim[2]-0.5, yend = -log10(padj.cutoff)), linetype="dashed") +
+      geom_segment(aes(x = -lfc.cutoff, y = -log10(padj.cutoff), xend = -lfc.cutoff, yend = ylim[2]-1 ), linetype="dashed") +
+      geom_segment(aes(x = -lfc.cutoff, y = -log10(padj.cutoff), xend = xlim[1]+0.5, yend = -log10(padj.cutoff)), linetype="dashed")
+  }else{
+    plot
+  }
+}
+
+
 
 
 
@@ -156,7 +245,7 @@ print(paste("Full data set:", all(rownames(colData) %in% colnames(cts)))) # Chec
 # Parsing count matrix to DESeq2 dataset
 ddsCts <- DESeqDataSetFromMatrix(countData = cts,
                                  colData = colData,
-                                 design = ~Donor + Condition)
+                                 design = ~Donor + Condition) #~Donor + Condition
 # Running DESeq analysis
 dds <- DESeq(ddsCts)
 
@@ -271,31 +360,6 @@ summary(res.unshrunken)
 ## LFC shrinkage
 res.ashr  <- lfcShrink(dds, type = "ashr", contrast=contrast,  res = res.unshrunken) 
 
-#' DrawMAPlot functions cuts of all values with padj = NA, but for this plot they should be included. Add an addtional condition that plots values with NA in grey (or other colour)
-
-DrawMAPlot <- function(res, main="",padj=0.05, xlab="Mean of normalized counts", ylab=expression(log[2]~fold~change), ylim=c(-2,2)){
-  #' Draws an MA plot showing the log2 fold changes attributable to a given variable over the mean of normalized counts for all the samples in a DESeqDataSet.
-  #' @param res DESeqDataSet, Extracted results from DESeqDataSet using the results() function after DESeq analysis was performed.
-  #' @param main String; Title of the Plot [Default: ""]
-  #' @param padj Double; Adjusted p-value. [Default: 0.05]
-  #' @param xlab String; Title of x label. [Default: "Mean of normalized counts"]
-  #' @param ylab String or Expression; Title of y label [Default: expression(log[2]~fold~change)]
-  #' @param ylim Integer or double; Limits of the y axis [Default: 2]
-  #' @examples
-  #' DrawMAPlot(res=res.TvsUn, main="Treated vs Untreated (ashr)")
-  res.df <- as.data.frame(res)
-  ggplot(data = res.df,aes(x = baseMean, y = log2FoldChange)) +
-    geom_point(color = ifelse(res.df$padj < padj, "red", "grey20"),  # add condition for padj = NA
-               alpha = ifelse(res.df$padj < padj, 0.5, 0.2),         # add condition for padj = NA
-               shape = 16) +
-    scale_x_log10(limits=c(1,1000000), breaks = trans_breaks("log10", function(x) 10^x),labels = trans_format("log10", math_format(10^.x))) +
-    labs(x = xlab, y = ylab) +
-    ylim(ylim) +
-    geom_hline(yintercept=0, linetype="dashed", color = "black",size=1) +
-    theme_bw() + 
-    ggtitle(main)
-}
-
 
 
 plotMA(res.unshrunken, ylim=c(-6,6)) + title("MA plot (unshrunken)")
@@ -335,3 +399,43 @@ res.anno  <- annotateResults(res, anno=annotation) # custom function
 ## Filtering and sorting of significant genes
 res.sig  <- getSigDEGs(res.anno,  padj.cutoff=padj, save=T, wd="../results/", filename="Treg_MOX-vs-M2")
 #View(res.sig)
+
+
+
+## Visualising DGE results
+#' Heatmaps of significant differentially expressed genes.
+#' Extracting the vst transformed counts to generate Heatmaps of sig. DEGs.
+
+# select the rows with significant genes
+sig.genes <- res.sig[res.sig$padj < padj,]["hgnc_symbol"] # get significant genes
+sig.symbol <- sig.genes[["hgnc_symbol"]]
+sig.ensembl <- rownames(sig.genes) 
+
+norm_countsig <- data.frame(vsd_mat)[sig.ensembl,] # select the sig genes from the transformed count matrix
+
+
+# plot
+
+png(paste0("../Results/",Sys.Date(),"_Heatmap.png"), width=600, height=1800, res=120 )
+pheatmap(norm_countsig,         
+         border_color = NA,
+         color = colorRampPalette(rev(brewer.pal(11,"RdBu")))(255),
+         cluster_rows = T,         
+         labels_row = sig.symbol,     
+         scale = "row",
+         show_rownames = T,       
+         #clustering_distance_cols = "euclidean",
+         clustering_method = "average",
+         fontsize_row = 5, 
+         main = "Heatmap of sig DEGs"
+)
+dev.off()
+
+
+# Volcano plot
+genelist = c("ABCA7","VMO1")
+makeVolcanoplot(res.anno=res.anno, padj.cutoff=0.05, lfc.cutoff=0.58, labelname="hgnc_symbol", labellist=genelist, ylim=c(0,10), xlim=c(-1.2,1.0), ybreaks=5,xbreaks=10, segments=F, main="oxLDL-treated M2 Macrophages vs untreated M2 macrophages")
+
+
+
+
